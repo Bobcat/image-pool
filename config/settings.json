@@ -1,0 +1,48 @@
+{
+  "service": {
+    "host": "127.0.0.1",
+    "port": 8013,
+    "log_level": "info"
+  },
+  "engine": {
+    "backend": "stub",
+    "models": {
+      "stub-image": {
+        "backend": "stub",
+        "enabled": true,
+        "target_inflight": 1,
+        "modalities": ["text", "image"],
+        "output_modalities": ["image"],
+        "tasks": ["image_generation", "image_edit"],
+        "max_images": 4,
+        "max_output_images": 4,
+        "vram_estimate_mib": 0
+      },
+      "flux2-klein-4b": {
+        "backend": "diffusers_flux2_klein",
+        "enabled": false,
+        "target_inflight": 1,
+        "model_path": "/home/gunnar/models/FLUX.2-klein-4B",
+        "modalities": ["text", "image"],
+        "output_modalities": ["image"],
+        "tasks": ["image_generation", "image_edit"],
+        "max_images": 4,
+        "max_output_images": 1,
+        "vram_estimate_mib": 16300
+      },
+      "firered-image-edit-1.1-q4-k-m": {
+        "backend": "diffusers_firered_gguf",
+        "enabled": false,
+        "target_inflight": 1,
+        "model_path": "/home/gunnar/models/FireRed-Image-Edit-1.1-Q4_K_M.gguf",
+        "base_model_path": "/home/gunnar/models/FireRed-Image-Edit-1.1",
+        "modalities": ["text", "image"],
+        "output_modalities": ["image"],
+        "tasks": ["image_edit"],
+        "max_images": 1,
+        "max_output_images": 1,
+        "vram_estimate_mib": 36000
+      }
+    }
+  }
+}
