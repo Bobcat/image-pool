@@ -11,7 +11,7 @@ from typing import Any
 from PIL import Image, UnidentifiedImageError
 
 from app.config import ModelSettings
-from app.engine.common import GeneratedImagePayload, ImageJob, ImageResult
+from app.engine.common import GeneratedImagePayload, ImageJob, ImageResult, release_torch_cuda_memory
 
 
 _SIZE_RE = re.compile(r"^(\d{2,4})x(\d{2,4})$")
@@ -34,13 +34,30 @@ class DiffusersFlux2KleinRuntime:
         self._torch = torch
         self._device = "cuda"
         self._dtype = torch.bfloat16
-        self._pipe = Flux2KleinPipeline.from_pretrained(
-            settings.model_path,
-            torch_dtype=self._dtype,
-            local_files_only=True,
-        )
-        self._pipe.to(self._device)
+        pipe = None
+        try:
+            pipe = Flux2KleinPipeline.from_pretrained(
+                settings.model_path,
+                torch_dtype=self._dtype,
+                local_files_only=True,
+            )
+            pipe.to(self._device)
+        except Exception:
+            del pipe
+            release_torch_cuda_memory(torch)
+            raise
+        self._pipe = pipe
         self._load_wall_ms = (time.perf_counter() - started_at) * 1000
+
+    def close(self) -> None:
+        pipe = getattr(self, "_pipe", None)
+        self._pipe = None
+        try:
+            if pipe is not None:
+                pipe.to("cpu")
+        finally:
+            del pipe
+            release_torch_cuda_memory(self._torch)
 
     async def complete(self, job: ImageJob) -> ImageResult:
         return await asyncio.to_thread(self._complete_sync, job)

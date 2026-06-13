@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import gc
+import sys
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -17,6 +19,25 @@ class ModelNotLoadedError(RuntimeError):
 
 class UnsupportedBackendError(RuntimeError):
     pass
+
+
+def release_torch_cuda_memory(torch_module: Any) -> None:
+    gc.collect()
+    cuda = getattr(torch_module, "cuda", None)
+    if cuda is None or not cuda.is_available():
+        return
+    cuda.empty_cache()
+    ipc_collect = getattr(cuda, "ipc_collect", None)
+    if ipc_collect is not None:
+        ipc_collect()
+
+
+def release_loaded_torch_cuda_memory() -> None:
+    torch_module = sys.modules.get("torch")
+    if torch_module is None:
+        gc.collect()
+        return
+    release_torch_cuda_memory(torch_module)
 
 
 @dataclass(slots=True)

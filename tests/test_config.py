@@ -22,6 +22,17 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(model.model_path, "/home/gunnar/models/FLUX.2-klein-4B")
         self.assertIn("image_edit", model.tasks)
 
+    def test_default_settings_have_flux_9b_model_disabled(self):
+        settings = load_settings()
+
+        self.assertIn("flux2-klein-9b", settings.engine.models)
+        model = settings.engine.models["flux2-klein-9b"]
+        self.assertEqual(model.backend, "diffusers_flux2_klein")
+        self.assertFalse(model.enabled)
+        self.assertEqual(model.target_inflight, 1)
+        self.assertEqual(model.model_path, "/home/gunnar/models/FLUX.2-klein-9B")
+        self.assertIn("image_edit", model.tasks)
+
     def test_default_settings_have_firered_model_disabled(self):
         settings = load_settings()
 

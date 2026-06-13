@@ -12,7 +12,7 @@ from typing import Any
 from PIL import Image, UnidentifiedImageError
 
 from app.config import ModelSettings
-from app.engine.common import GeneratedImagePayload, ImageJob, ImageResult
+from app.engine.common import GeneratedImagePayload, ImageJob, ImageResult, release_torch_cuda_memory
 
 
 BASE_MODEL_ID = "FireRedTeam/FireRed-Image-Edit-1.1"
@@ -37,23 +37,42 @@ class DiffusersFireRedGgufRuntime:
         self._device = "cuda"
         self._dtype = torch.bfloat16
         base_model_path = settings.base_model_path or BASE_MODEL_ID
-        transformer = QwenImageTransformer2DModel.from_single_file(
-            _resolve_model_path(settings.model_path),
-            quantization_config=GGUFQuantizationConfig(compute_dtype=self._dtype),
-            torch_dtype=self._dtype,
-            config=base_model_path,
-            subfolder="transformer",
-        )
-        self._pipe = QwenImageEditPipeline.from_pretrained(
-            base_model_path,
-            transformer=transformer,
-            torch_dtype=self._dtype,
-            local_files_only=True,
-        )
-        self._pipe.vae.enable_tiling()
-        self._pipe.vae.enable_slicing()
-        self._pipe.to(self._device)
+        transformer = None
+        pipe = None
+        try:
+            transformer = QwenImageTransformer2DModel.from_single_file(
+                _resolve_model_path(settings.model_path),
+                quantization_config=GGUFQuantizationConfig(compute_dtype=self._dtype),
+                torch_dtype=self._dtype,
+                config=base_model_path,
+                subfolder="transformer",
+            )
+            pipe = QwenImageEditPipeline.from_pretrained(
+                base_model_path,
+                transformer=transformer,
+                torch_dtype=self._dtype,
+                local_files_only=True,
+            )
+            pipe.vae.enable_tiling()
+            pipe.vae.enable_slicing()
+            pipe.to(self._device)
+        except Exception:
+            del pipe
+            del transformer
+            release_torch_cuda_memory(torch)
+            raise
+        self._pipe = pipe
         self._load_wall_ms = (time.perf_counter() - started_at) * 1000
+
+    def close(self) -> None:
+        pipe = getattr(self, "_pipe", None)
+        self._pipe = None
+        try:
+            if pipe is not None:
+                pipe.to("cpu")
+        finally:
+            del pipe
+            release_torch_cuda_memory(self._torch)
 
     async def complete(self, job: ImageJob) -> ImageResult:
         return await asyncio.to_thread(self._complete_sync, job)

@@ -30,6 +30,18 @@
         "max_output_images": 1,
         "vram_estimate_mib": 16300
       },
+      "flux2-klein-9b": {
+        "backend": "diffusers_flux2_klein",
+        "enabled": false,
+        "target_inflight": 1,
+        "model_path": "/home/gunnar/models/FLUX.2-klein-9B",
+        "modalities": ["text", "image"],
+        "output_modalities": ["image"],
+        "tasks": ["image_generation", "image_edit"],
+        "max_images": 4,
+        "max_output_images": 1,
+        "vram_estimate_mib": 34000
+      },
       "firered-image-edit-1.1-q4-k-m": {
         "backend": "diffusers_firered_gguf",
         "enabled": false,

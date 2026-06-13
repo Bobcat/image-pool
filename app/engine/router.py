@@ -12,6 +12,7 @@ from app.engine.common import (
     ModelRuntimeState,
     UnknownModelError,
     UnsupportedBackendError,
+    release_loaded_torch_cuda_memory,
 )
 from app.engine.diffusers_firered_gguf import DiffusersFireRedGgufRuntime
 from app.engine.diffusers_flux import DiffusersFlux2KleinRuntime
@@ -41,7 +42,10 @@ class ImageRouterEngine:
 
     async def close(self) -> None:
         await self._scheduler.close()
+        for runtime in self._runtimes.values():
+            self._close_runtime(runtime)
         self._runtimes.clear()
+        release_loaded_torch_cuda_memory()
         for state in self._states.values():
             state.loaded = False
 
@@ -66,15 +70,23 @@ class ImageRouterEngine:
             state.loading = False
             return self._state_payload(model_name)
         except Exception as exc:
-            state.last_error = str(exc)
-            raise
+            message = str(exc)
+            state.last_error = message
+            exc.__traceback__ = None
+            exc.__context__ = None
+            exc.__cause__ = None
+            release_loaded_torch_cuda_memory()
+            raise RuntimeError(message) from None
         finally:
             state.loading = False
 
     async def unload_model(self, model_name: str) -> dict[str, Any]:
         self._model_settings(model_name)
         await self._scheduler.unregister(model_name)
-        self._runtimes.pop(model_name, None)
+        runtime = self._runtimes.pop(model_name, None)
+        self._close_runtime(runtime)
+        del runtime
+        release_loaded_torch_cuda_memory()
         state = self._states[model_name]
         state.loaded = False
         state.loaded_at = None
@@ -200,6 +212,11 @@ class ImageRouterEngine:
         if model_settings.backend == "diffusers_firered_gguf":
             return DiffusersFireRedGgufRuntime(model_name, model_settings)
         raise UnsupportedBackendError(f"unsupported backend: {model_settings.backend}")
+
+    def _close_runtime(self, runtime: object | None) -> None:
+        close = getattr(runtime, "close", None)
+        if close is not None:
+            close()
 
     def _public_model_payload(self, model_name: str) -> dict[str, Any]:
         model_settings = self._model_settings(model_name)
