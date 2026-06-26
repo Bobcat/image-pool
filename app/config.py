@@ -33,6 +33,8 @@ class ModelSettings(BaseModel):
     max_images: int = Field(default=4, ge=0)
     max_output_images: int = Field(default=1, ge=1, le=8)
     vram_estimate_mib: int | None = Field(default=None, ge=0)
+    recommended_steps: int | None = Field(default=None, ge=1)
+    recommended_guidance: float | None = Field(default=None, ge=0)
 
 
 class EngineSettings(BaseModel):

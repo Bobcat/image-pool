@@ -22,6 +22,7 @@ flux = [
   "accelerate>=1.14,<2",
   "diffusers @ git+https://github.com/huggingface/diffusers.git@a50ade492678dd105f3df1b3d3e0df35c4e0740e",
   "gguf>=0.19,<1",
+  "peft>=0.17,<1",
   "pillow>=12,<13",
   "protobuf>=7,<8",
   "safetensors>=0.7,<1",

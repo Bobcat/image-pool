@@ -226,6 +226,8 @@ class ImageRouterEngine:
             "owned_by": "image-pool",
             "backend": model_settings.backend,
             "capabilities": self._capabilities_payload(model_settings),
+            "recommended_steps": model_settings.recommended_steps,
+            "recommended_guidance": model_settings.recommended_guidance,
         }
 
     def _state_payload(self, model_name: str) -> dict[str, Any]:
@@ -249,6 +251,8 @@ class ImageRouterEngine:
             "model_path": model_settings.model_path,
             "base_model_path": model_settings.base_model_path,
             "vram_estimate_mib": model_settings.vram_estimate_mib,
+            "recommended_steps": model_settings.recommended_steps,
+            "recommended_guidance": model_settings.recommended_guidance,
         }
 
     def _capabilities_payload(self, model_settings: ModelSettings) -> dict[str, Any]:

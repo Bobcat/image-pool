@@ -58,3 +58,22 @@ class ImageResponse(BaseModel):
     model: str
     data: list[ImageData]
     metrics: dict[str, Any] = Field(default_factory=dict)
+
+
+class FluxLoraTrainingStartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str
+    dataset_path: str = Field(min_length=1)
+    output_path: str = Field(min_length=1)
+    trigger_word: str = Field(default="GFX_IMPR5N", min_length=1)
+    steps: int = Field(default=3000, ge=1)
+    learning_rate: float = Field(default=0.000095, gt=0)
+    rank: int = Field(default=128, ge=1)
+    alpha: int = Field(default=64, ge=1)
+    batch_size: int = Field(default=1, ge=1)
+    resolution: list[int] = Field(
+        default_factory=lambda: [256, 512, 768, 1024, 1280, 1536],
+        min_length=1,
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)

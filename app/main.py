@@ -10,7 +10,8 @@ from fastapi.responses import JSONResponse
 from app.config import load_settings
 from app.engine.common import ModelNotLoadedError, UnknownModelError, UnsupportedBackendError
 from app.engine.router import ImageRouterEngine
-from app.schemas import ImageEditRequest, ImageGenerationRequest
+from app.schemas import FluxLoraTrainingStartRequest, ImageEditRequest, ImageGenerationRequest
+from app.training import start_flux_lora_training, stop_training, training_status
 
 
 def create_app(settings_path: str | Path | None = None) -> FastAPI:
@@ -75,6 +76,18 @@ def create_app(settings_path: str | Path | None = None) -> FastAPI:
     @app.post("/v1/images/edits")
     async def image_edits(request: ImageEditRequest) -> dict:
         return (await engine.edit(request)).model_dump()
+
+    @app.get("/v1/training/flux-lora")
+    async def get_flux_lora_training() -> dict:
+        return training_status()
+
+    @app.post("/v1/training/flux-lora")
+    async def start_flux_lora_training_run(request: FluxLoraTrainingStartRequest) -> dict:
+        return start_flux_lora_training(engine, request)
+
+    @app.post("/v1/training/flux-lora/stop")
+    async def stop_flux_lora_training_run() -> dict:
+        return stop_training()
 
     return app
 
