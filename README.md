@@ -3,7 +3,7 @@
 `image-pool` is a small FastAPI service for local image generation and image
 editing backends. It exposes an OpenAI-style image API, keeps model lifecycle
 state in one process, and lets a UI or another service load, unload, inspect,
-and call local image models.
+call local image models, and start local LoRA training runs.
 
 The service is intentionally narrow: it owns local image model routing and
 runtime scheduling. It does not own UI workflows, persistent artifact storage,
@@ -35,6 +35,8 @@ or long-term job persistence.
 - Reports coarse GPU memory information from `nvidia-smi`.
 - Runs one in-process scheduler per loaded model with a configurable
   `target_inflight`.
+- Starts and monitors local LoRA training runs for FLUX.2-klein and Z-Image
+  models.
 
 ## Repository Role
 
@@ -44,6 +46,7 @@ This repo owns:
 - Model config loading and `config/local.json` overrides.
 - In-process model lifecycle and scheduling.
 - Local Diffusers-based image generation/editing runtimes.
+- Local LoRA training workers for supported image backends.
 - A stub runtime for API and lifecycle tests.
 
 This repo deliberately does not own:
@@ -68,7 +71,8 @@ app/config.py
   Pydantic settings models and config/local.json merge logic.
 
 app/schemas.py
-  Request and response schemas for image generation and image editing.
+  Request and response schemas for image generation, image editing, and LoRA
+  training.
 
 app/engine/router.py
   Model registry, load/unload logic, public/admin payloads, GPU memory payloads.
@@ -82,17 +86,36 @@ app/engine/stub.py
 app/engine/diffusers_flux.py
   FLUX.2-klein Diffusers runtime for text-to-image and image edit.
 
+app/engine/flux_fp8.py
+  Helpers for loading FLUX.2-klein FP8 safetensor variants with a base pipeline.
+
+app/engine/diffusers_sdxl.py
+  SDXL Diffusers runtime for text-to-image and img2img-style editing.
+
+app/engine/diffusers_z_image.py
+  Z-Image Diffusers runtime for text-to-image, img2img, and LoRA adapter use.
+
 app/engine/diffusers_firered_gguf.py
   FireRed/Qwen image-edit runtime using a GGUF transformer and Diffusers.
 
+app/training.py
+  In-process FLUX.2-klein and Z-Image LoRA training workers and status state.
+
 config/settings.json
   Base model and service configuration.
+
+docs/runtime-admin-api.md
+  Detailed runtime admin API notes, including current payloads and proposed
+  parameter schema extensions.
 
 tests/
   Lightweight API and configuration tests.
 ```
 
 ## API Surface
+
+For the full runtime/admin contract, see
+[`docs/runtime-admin-api.md`](docs/runtime-admin-api.md).
 
 ### Health
 
@@ -192,6 +215,25 @@ curl -s http://127.0.0.1:8013/v1/images/edits \
 
 `images[].data_url` must be an image data URL with a base64 payload.
 
+### LoRA Training
+
+```http
+GET /v1/training/flux-lora
+POST /v1/training/flux-lora
+POST /v1/training/flux-lora/stop
+```
+
+```http
+GET /v1/training/z-image-lora
+POST /v1/training/z-image-lora
+POST /v1/training/z-image-lora/stop
+```
+
+Training requests point at an existing dataset directory and output directory.
+The dataset directory must contain image files with matching `.txt` captions.
+The service keeps one in-process training state, so only one training run is
+active at a time.
+
 ## Runtime Model
 
 `image-pool` is a single-process service. At startup it reads settings, creates
@@ -204,6 +246,10 @@ which avoids concurrent GPU work inside one model runtime.
 
 Model load and unload are runtime actions. They do not rewrite config files.
 The `enabled` field controls startup behavior only.
+
+Training runs execute inside the service process in a worker thread and write
+their outputs to the requested output directory. Training status is runtime
+state; it is not a durable job queue and does not survive process restart.
 
 ## Configuration
 
@@ -231,12 +277,15 @@ Important model fields:
 | `target_inflight` | Maximum concurrent requests for the loaded model executor. |
 | `model_path` | Local model directory or file used by the backend. |
 | `base_model_path` | Optional local base pipeline directory for backends that need a separate base model. |
+| `transformer_config_path` | Optional transformer config path for backends that load a separate transformer artifact. |
 | `modalities` | Input modalities, for example `["text", "image"]`. |
 | `output_modalities` | Output modalities, currently `["image"]`. |
 | `tasks` | Supported tasks, such as `image_generation` and `image_edit`. |
 | `max_images` | Maximum input images accepted by image-edit requests. |
 | `max_output_images` | Maximum output images per request. |
 | `vram_estimate_mib` | Configured VRAM estimate shown by admin/UI surfaces. |
+| `recommended_steps` | Model-specific default step count for UI/runtime callers. |
+| `recommended_guidance` | Model-specific default guidance value for UI/runtime callers. |
 
 ## Model Directories
 
@@ -265,6 +314,22 @@ Example local layout:
     tokenizer/
 
   FireRed-Image-Edit-1.1-Q4_K_M.gguf
+
+  stable-diffusion-xl-base-1.0/
+    model_index.json
+    unet/
+    vae/
+    text_encoder/
+    text_encoder_2/
+    tokenizer/
+    tokenizer_2/
+
+  Z-Image-Turbo/
+    model_index.json
+    transformer/
+    vae/
+    text_encoder/
+    tokenizer/
 ```
 
 Example download commands:
@@ -315,6 +380,49 @@ Defaults:
 
 The current runtime loads the full pipeline onto GPU.
 
+FP8 FLUX.2-klein safetensor variants can be configured with `model_path`
+pointing at the safetensor file and `base_model_path` pointing at the matching
+Diffusers base pipeline directory.
+
+### `diffusers_sdxl`
+
+The SDXL backend uses `StableDiffusionXLPipeline` for text-to-image and
+`StableDiffusionXLImg2ImgPipeline` when an input image is provided.
+
+Capabilities:
+
+- Text-to-image.
+- Img2img-style image edit.
+- One input image in config.
+- One output image per request in config.
+
+Defaults:
+
+- `steps`: `recommended_steps` or `30`
+- `guidance`: `recommended_guidance` or `5.0`
+- `strength`: `0.35` for image edit requests
+- Device: CUDA
+
+### `diffusers_z_image`
+
+The Z-Image backend uses the configured Z-Image Diffusers pipeline for
+text-to-image and image-to-image requests.
+
+Capabilities:
+
+- Text-to-image.
+- Img2img-style image edit when the pipeline supports it.
+- LoRA adapter loading through request metadata.
+- One input image in config.
+- One output image per request in config.
+
+Defaults:
+
+- `steps`: `recommended_steps` or `9`
+- `guidance`: `recommended_guidance` or `0.0`
+- `strength`: `0.35` for image edit requests
+- Device: CUDA
+
 ### `diffusers_firered_gguf`
 
 The FireRed backend uses a Qwen-image edit pipeline with a GGUF transformer
@@ -354,6 +462,10 @@ For real Diffusers backends, install the optional runtime dependencies:
 pip install -e '.[flux]'
 ```
 
+The optional extra is currently named `flux`, but it contains the shared
+Diffusers, Torch, PEFT, GGUF, and image runtime dependencies used by the real
+backends.
+
 Run the service:
 
 ```bash
@@ -371,7 +483,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8013
 Run the lightweight test suite:
 
 ```bash
-python -m unittest discover -s tests -v
+python -m pytest
 ```
 
 Compile-check application and tests:
