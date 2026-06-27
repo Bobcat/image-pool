@@ -13,24 +13,25 @@ from PIL import Image, UnidentifiedImageError
 
 from app.config import ModelSettings
 from app.engine.common import GeneratedImagePayload, ImageJob, ImageResult, release_torch_cuda_memory
-from app.engine.flux_fp8 import is_flux2_fp8_transformer_path, load_flux2_fp8_transformer
 
 
 _SIZE_RE = re.compile(r"^(\d{2,4})x(\d{2,4})$")
 _WORKBENCH_LORA_ADAPTER = "workbench_lora"
 
 
-class DiffusersFlux2KleinRuntime:
+class DiffusersZImageRuntime:
     def __init__(self, model_name: str, settings: ModelSettings) -> None:
         if not settings.model_path:
             raise ValueError(f"model_path is required for {settings.backend}")
+        if not Path(settings.model_path).expanduser().exists():
+            raise ValueError(f"model_path does not exist: {settings.model_path}")
 
         started_at = time.perf_counter()
         import torch
-        from diffusers import Flux2KleinPipeline
+        from diffusers import ZImagePipeline
 
         if not torch.cuda.is_available():
-            raise RuntimeError("CUDA is required for diffusers_flux2_klein")
+            raise RuntimeError("CUDA is required for diffusers_z_image")
 
         self.model_name = model_name
         self.settings = settings
@@ -40,41 +41,34 @@ class DiffusersFlux2KleinRuntime:
         self._active_lora_path = ""
         pipe = None
         try:
-            transformer = None
-            pretrained_path = settings.model_path
-            if is_flux2_fp8_transformer_path(settings.model_path):
-                if not settings.base_model_path:
-                    raise ValueError("base_model_path is required for FP8 Flux transformer models")
-                transformer = load_flux2_fp8_transformer(
-                    settings.model_path,
-                    settings.transformer_config_path or settings.base_model_path,
-                    dtype=self._dtype,
-                )
-                pretrained_path = settings.base_model_path
-            kwargs: dict[str, Any] = {}
-            if transformer is not None:
-                kwargs["transformer"] = transformer
-            pipe = Flux2KleinPipeline.from_pretrained(
-                pretrained_path,
+            pipe = ZImagePipeline.from_pretrained(
+                settings.model_path,
                 torch_dtype=self._dtype,
+                low_cpu_mem_usage=False,
                 local_files_only=True,
-                **kwargs,
             )
             pipe.to(self._device)
+            pipe.set_progress_bar_config(disable=True)
         except Exception:
             del pipe
             release_torch_cuda_memory(torch)
             raise
         self._pipe = pipe
+        self._img2img_pipe = None
         self._load_wall_ms = (time.perf_counter() - started_at) * 1000
 
     def close(self) -> None:
         pipe = getattr(self, "_pipe", None)
+        img2img_pipe = getattr(self, "_img2img_pipe", None)
         self._pipe = None
+        self._img2img_pipe = None
         try:
-            if pipe is not None:
+            if img2img_pipe is not None:
+                img2img_pipe.to("cpu")
+            elif pipe is not None:
                 pipe.to("cpu")
         finally:
+            del img2img_pipe
             del pipe
             release_torch_cuda_memory(self._torch)
 
@@ -82,12 +76,22 @@ class DiffusersFlux2KleinRuntime:
         return await asyncio.to_thread(self._complete_sync, job)
 
     def _complete_sync(self, job: ImageJob) -> ImageResult:
+        if job.operation not in {"generation", "edit"}:
+            raise ValueError("diffusers_z_image only supports image generation and image edit")
+
         started_at = time.perf_counter()
         width, height = _parse_size(job.size)
-        steps = _metadata_int(job.metadata, "steps", default=4, minimum=1, maximum=80)
-        guidance = _metadata_float(job.metadata, "guidance", default=1.0, minimum=0.0, maximum=20.0)
+        steps = _metadata_int(job.metadata, "steps", default=self.settings.recommended_steps or 9, minimum=1, maximum=80)
+        guidance = _metadata_float(
+            job.metadata,
+            "guidance",
+            default=self.settings.recommended_guidance or 0.0,
+            minimum=0.0,
+            maximum=20.0,
+        )
         lora_metrics = self._apply_lora(job.metadata)
-        input_images = _decode_images(job) if job.operation == "edit" else None
+        strength = _metadata_float(job.metadata, "strength", default=0.35, minimum=0.0, maximum=1.0)
+        input_image = _decode_image(job).resize((width, height), Image.Resampling.LANCZOS) if job.operation == "edit" else None
 
         images: list[GeneratedImagePayload] = []
         for index in range(job.n):
@@ -103,10 +107,12 @@ class DiffusersFlux2KleinRuntime:
                 "num_inference_steps": steps,
                 "generator": generator,
             }
-            if input_images is not None:
-                kwargs["image"] = input_images[0] if len(input_images) == 1 else input_images
+            if input_image is not None:
+                kwargs["image"] = input_image
+                kwargs["strength"] = strength
 
-            image = self._pipe(**kwargs).images[0]
+            pipe = self._img2img_pipe_for_edit() if input_image is not None else self._pipe
+            image = pipe(**kwargs).images[0]
             images.append(
                 GeneratedImagePayload(
                     b64_json=_encode_png(image),
@@ -115,6 +121,7 @@ class DiffusersFlux2KleinRuntime:
             )
 
         self._torch.cuda.synchronize()
+        release_torch_cuda_memory(self._torch)
         return ImageResult(
             images=images,
             metrics={
@@ -128,10 +135,10 @@ class DiffusersFlux2KleinRuntime:
                 "height": height,
                 "steps": steps,
                 "guidance": guidance,
+                "strength": strength if input_image is not None else 0.0,
                 **lora_metrics,
                 "device": self._device,
                 "torch_dtype": "bfloat16",
-                "transformer_format": "fp8_scaled" if is_flux2_fp8_transformer_path(self.settings.model_path) else "diffusers",
             },
         )
 
@@ -161,10 +168,18 @@ class DiffusersFlux2KleinRuntime:
             "lora_scale": lora_request["scale"],
         }
 
+    def _img2img_pipe_for_edit(self) -> Any:
+        if self._img2img_pipe is None:
+            from diffusers import ZImageImg2ImgPipeline
+
+            self._img2img_pipe = ZImageImg2ImgPipeline.from_pipe(self._pipe, torch_dtype=self._dtype)
+            self._img2img_pipe.set_progress_bar_config(disable=True)
+        return self._img2img_pipe
+
 
 def _parse_size(size: str) -> tuple[int, int]:
     if size == "auto":
-        return (512, 512)
+        return (1024, 1024)
     match = _SIZE_RE.match(size)
     if match is None:
         raise ValueError("size must be 'auto' or '<width>x<height>'")
@@ -214,26 +229,24 @@ def _lora_request_from_metadata(metadata: dict[str, Any]) -> dict[str, Any] | No
     }
 
 
-def _decode_images(job: ImageJob) -> list[Image.Image]:
-    if not job.images:
-        raise ValueError("image edit requests require at least one input image")
+def _decode_image(job: ImageJob) -> Image.Image:
+    if len(job.images) != 1:
+        raise ValueError("diffusers_z_image image edit requests require exactly one input image")
 
-    decoded = []
-    for image in job.images:
-        if not image.data_url.startswith("data:image/"):
-            raise ValueError("input images must be data URLs with an image media type")
-        _header, separator, payload = image.data_url.partition(",")
-        if not separator:
-            raise ValueError("input image data URL is missing base64 payload")
-        try:
-            image_bytes = base64.b64decode(payload, validate=True)
-        except binascii.Error as exc:
-            raise ValueError("input image data URL payload is not valid base64") from exc
-        try:
-            decoded.append(Image.open(io.BytesIO(image_bytes)).convert("RGB"))
-        except UnidentifiedImageError as exc:
-            raise ValueError("input image data URL payload is not a valid image") from exc
-    return decoded
+    image = job.images[0]
+    if not image.data_url.startswith("data:image/"):
+        raise ValueError("input image must be a data URL with an image media type")
+    _header, separator, payload = image.data_url.partition(",")
+    if not separator:
+        raise ValueError("input image data URL is missing base64 payload")
+    try:
+        image_bytes = base64.b64decode(payload, validate=True)
+    except binascii.Error as exc:
+        raise ValueError("input image data URL payload is not valid base64") from exc
+    try:
+        return Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except UnidentifiedImageError as exc:
+        raise ValueError("input image data URL payload is not a valid image") from exc
 
 
 def _encode_png(image: Image.Image) -> str:

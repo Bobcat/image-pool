@@ -46,6 +46,51 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(model.max_images, 1)
         self.assertEqual(model.tasks, ("image_edit",))
 
+    def test_default_settings_have_sdxl_model_disabled(self):
+        settings = load_settings()
+
+        self.assertIn("sdxl-base-1.0", settings.engine.models)
+        model = settings.engine.models["sdxl-base-1.0"]
+        self.assertEqual(model.backend, "diffusers_sdxl")
+        self.assertFalse(model.enabled)
+        self.assertEqual(model.target_inflight, 1)
+        self.assertEqual(model.model_path, "/home/gunnar/models/stable-diffusion-xl-base-1.0")
+        self.assertEqual(model.max_images, 1)
+        self.assertEqual(model.tasks, ("image_generation", "image_edit"))
+        self.assertEqual(model.modalities, ("text", "image"))
+        self.assertEqual(model.recommended_steps, 30)
+        self.assertEqual(model.recommended_guidance, 5.0)
+
+    def test_default_settings_have_z_image_turbo_model_disabled(self):
+        settings = load_settings()
+
+        self.assertIn("z-image-turbo", settings.engine.models)
+        model = settings.engine.models["z-image-turbo"]
+        self.assertEqual(model.backend, "diffusers_z_image")
+        self.assertFalse(model.enabled)
+        self.assertEqual(model.target_inflight, 1)
+        self.assertEqual(model.model_path, "/home/gunnar/models/Z-Image-Turbo")
+        self.assertEqual(model.max_images, 1)
+        self.assertEqual(model.tasks, ("image_generation", "image_edit"))
+        self.assertEqual(model.modalities, ("text", "image"))
+        self.assertEqual(model.recommended_steps, 9)
+        self.assertEqual(model.recommended_guidance, 0.0)
+
+    def test_default_settings_have_z_image_base_model_disabled(self):
+        settings = load_settings()
+
+        self.assertIn("z-image-base", settings.engine.models)
+        model = settings.engine.models["z-image-base"]
+        self.assertEqual(model.backend, "diffusers_z_image")
+        self.assertFalse(model.enabled)
+        self.assertEqual(model.target_inflight, 1)
+        self.assertEqual(model.model_path, "/home/gunnar/models/Z-Image")
+        self.assertEqual(model.max_images, 1)
+        self.assertEqual(model.tasks, ("image_generation", "image_edit"))
+        self.assertEqual(model.modalities, ("text", "image"))
+        self.assertEqual(model.recommended_steps, 50)
+        self.assertEqual(model.recommended_guidance, 5.0)
+
 
 if __name__ == "__main__":
     unittest.main()

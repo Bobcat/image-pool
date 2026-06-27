@@ -10,8 +10,8 @@ from fastapi.responses import JSONResponse
 from app.config import load_settings
 from app.engine.common import ModelNotLoadedError, UnknownModelError, UnsupportedBackendError
 from app.engine.router import ImageRouterEngine
-from app.schemas import FluxLoraTrainingStartRequest, ImageEditRequest, ImageGenerationRequest
-from app.training import start_flux_lora_training, stop_training, training_status
+from app.schemas import FluxLoraTrainingStartRequest, ImageEditRequest, ImageGenerationRequest, ZImageLoraTrainingStartRequest
+from app.training import start_flux_lora_training, start_z_image_lora_training, stop_training, training_status
 
 
 def create_app(settings_path: str | Path | None = None) -> FastAPI:
@@ -79,7 +79,7 @@ def create_app(settings_path: str | Path | None = None) -> FastAPI:
 
     @app.get("/v1/training/flux-lora")
     async def get_flux_lora_training() -> dict:
-        return training_status()
+        return training_status("flux")
 
     @app.post("/v1/training/flux-lora")
     async def start_flux_lora_training_run(request: FluxLoraTrainingStartRequest) -> dict:
@@ -87,7 +87,19 @@ def create_app(settings_path: str | Path | None = None) -> FastAPI:
 
     @app.post("/v1/training/flux-lora/stop")
     async def stop_flux_lora_training_run() -> dict:
-        return stop_training()
+        return stop_training("flux")
+
+    @app.get("/v1/training/z-image-lora")
+    async def get_z_image_lora_training() -> dict:
+        return training_status("z-image")
+
+    @app.post("/v1/training/z-image-lora")
+    async def start_z_image_lora_training_run(request: ZImageLoraTrainingStartRequest) -> dict:
+        return start_z_image_lora_training(engine, request)
+
+    @app.post("/v1/training/z-image-lora/stop")
+    async def stop_z_image_lora_training_run() -> dict:
+        return stop_training("z-image")
 
     return app
 

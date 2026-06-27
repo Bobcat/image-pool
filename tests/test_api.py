@@ -9,6 +9,7 @@ from PIL import Image
 
 from app import training as training_module
 from app.engine.diffusers_flux import _lora_request_from_metadata
+from app.engine.diffusers_z_image import _lora_request_from_metadata as _z_image_lora_request_from_metadata
 from app.main import create_app
 
 
@@ -83,6 +84,23 @@ class ApiTests(unittest.TestCase):
             )
         )
 
+    def test_z_image_lora_metadata_resolves_request(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lora_path = Path(tmpdir) / "pytorch_lora_weights.safetensors"
+            lora_path.write_bytes(b"lora")
+
+            payload = _z_image_lora_request_from_metadata(
+                {
+                    "lora_id": "z-lora",
+                    "lora_path": str(lora_path),
+                    "lora_scale": 0.65,
+                }
+            )
+
+        self.assertEqual(payload["id"], "z-lora")
+        self.assertEqual(payload["path"], str(lora_path.resolve()))
+        self.assertEqual(payload["scale"], 0.65)
+
     def test_training_status_reports_backend(self):
         with TestClient(create_app()) as client:
             response = client.get("/v1/training/flux-lora")
@@ -90,6 +108,16 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["backend"]["id"], "diffusers_flux2_lora")
+        self.assertTrue(payload["backend"]["implemented"])
+        self.assertEqual(payload["run"]["status"], "idle")
+
+    def test_z_image_training_status_reports_backend(self):
+        with TestClient(create_app()) as client:
+            response = client.get("/v1/training/z-image-lora")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["backend"]["id"], "diffusers_z_image_lora")
         self.assertTrue(payload["backend"]["implemented"])
         self.assertEqual(payload["run"]["status"], "idle")
 
@@ -305,6 +333,77 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["run"]["status"], "completed")
         self.assertTrue(payload["run"]["output_path"].startswith(str(output_path)))
         self.assertEqual(payload["run"]["progress"]["steps"], 3000)
+
+    def test_z_image_training_start_launches_internal_trainer(self):
+        def fake_start_thread(_request, _model_payload, _run_dir, _stop_event):
+            training_module._update_state(
+                status="completed",
+                completed_at=training_module._utc_now(),
+                returncode=0,
+                message="Fake Z-Image training completed.",
+            )
+            return None
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dataset_path = Path(tmpdir) / "dataset"
+            output_path = Path(tmpdir) / "output"
+            model_path = Path(tmpdir) / "model"
+            dataset_path.mkdir()
+            model_path.mkdir()
+            (dataset_path / "example.png").write_bytes(b"image")
+            (dataset_path / "example.txt").write_text("GFX_IMPR5N. Caption.\n", encoding="utf-8")
+            settings_path = Path(tmpdir) / "settings.json"
+            settings_path.write_text(
+                """
+                {
+                  "engine": {
+                    "models": {
+                      "z-image-test": {
+                        "backend": "diffusers_z_image",
+                        "enabled": false,
+                        "model_path": "%s",
+                        "modalities": ["text", "image"],
+                        "tasks": ["image_generation", "image_edit"]
+                      }
+                    }
+                  }
+                }
+                """
+                % str(model_path),
+                encoding="utf-8",
+            )
+
+            with (
+                patch(
+                    "app.training._backend_status",
+                    return_value={
+                        "id": "diffusers_z_image_lora",
+                        "implemented": True,
+                        "available": True,
+                        "missing_dependencies": [],
+                        "message": "Z-Image LoRA trainer is available.",
+                    },
+                ),
+                patch("app.training._start_z_image_training_thread", side_effect=fake_start_thread),
+                TestClient(create_app(settings_path)) as client,
+            ):
+                response = client.post(
+                    "/v1/training/z-image-lora",
+                    json={
+                        "model": "z-image-test",
+                        "dataset_path": str(dataset_path),
+                        "output_path": str(output_path),
+                        "steps": 10,
+                        "checkpoint_interval": 5,
+                    },
+                )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["run"]["status"], "completed")
+        self.assertTrue(payload["run"]["output_path"].startswith(str(output_path)))
+        self.assertEqual(payload["run"]["progress"]["steps"], 10)
+        self.assertEqual(payload["backend"]["id"], "diffusers_z_image_lora")
 
 
 if __name__ == "__main__":

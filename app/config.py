@@ -27,6 +27,7 @@ class ModelSettings(BaseModel):
     target_inflight: int = Field(default=1, ge=1)
     model_path: str | None = None
     base_model_path: str | None = None
+    transformer_config_path: str | None = None
     modalities: tuple[str, ...] = ("text",)
     output_modalities: tuple[str, ...] = ("image",)
     tasks: tuple[str, ...] = ("image_generation",)

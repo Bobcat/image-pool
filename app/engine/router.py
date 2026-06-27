@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import subprocess
 import time
 import uuid
 from typing import Any
@@ -12,10 +11,15 @@ from app.engine.common import (
     ModelRuntimeState,
     UnknownModelError,
     UnsupportedBackendError,
+    estimate_model_artifact_size_mib,
+    query_gpu_memory,
+    query_primary_gpu_used_mib,
     release_loaded_torch_cuda_memory,
 )
 from app.engine.diffusers_firered_gguf import DiffusersFireRedGgufRuntime
 from app.engine.diffusers_flux import DiffusersFlux2KleinRuntime
+from app.engine.diffusers_sdxl import DiffusersSdxlRuntime
+from app.engine.diffusers_z_image import DiffusersZImageRuntime
 from app.engine.scheduler import LoadedModelExecutor, RuntimeScheduler
 from app.engine.stub import StubImageRuntime
 from app.schemas import ImageData, ImageEditRequest, ImageGenerationRequest, ImageResponse
@@ -26,7 +30,14 @@ class ImageRouterEngine:
         self.settings = settings
         self._scheduler = RuntimeScheduler()
         self._states: dict[str, ModelRuntimeState] = {}
-        self._runtimes: dict[str, StubImageRuntime | DiffusersFlux2KleinRuntime | DiffusersFireRedGgufRuntime] = {}
+        self._runtimes: dict[
+            str,
+            StubImageRuntime
+            | DiffusersFlux2KleinRuntime
+            | DiffusersFireRedGgufRuntime
+            | DiffusersSdxlRuntime
+            | DiffusersZImageRuntime,
+        ] = {}
         for name, model_settings in settings.engine.models.items():
             self._states[name] = ModelRuntimeState(
                 name=name,
@@ -56,6 +67,7 @@ class ImageRouterEngine:
             return self._state_payload(model_name)
         state.loading = True
         state.last_error = None
+        gpu_used_before_mib = query_primary_gpu_used_mib()
         try:
             runtime = self._create_runtime(model_name, model_settings)
             executor = LoadedModelExecutor(
@@ -68,6 +80,10 @@ class ImageRouterEngine:
             state.loaded = True
             state.loaded_at = time.time()
             state.loading = False
+            gpu_used_after_mib = query_primary_gpu_used_mib()
+            observed_vram_mib = _observed_vram_delta_mib(gpu_used_before_mib, gpu_used_after_mib)
+            if observed_vram_mib is not None:
+                state.observed_vram_mib = observed_vram_mib
             return self._state_payload(model_name)
         except Exception as exc:
             message = str(exc)
@@ -154,48 +170,14 @@ class ImageRouterEngine:
         }
 
     def gpu_memory_payload(self) -> dict[str, Any]:
+        gpus, error = query_gpu_memory()
         payload: dict[str, Any] = {
-            "source": "nvidia-smi",
-            "available": False,
-            "gpus": [],
+            "gpus": gpus,
             "models": [],
+            "error": error,
         }
-        try:
-            completed = subprocess.run(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=index,name,memory.total,memory.used,memory.free",
-                    "--format=csv,noheader,nounits",
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-        except Exception as exc:
-            payload["error"] = str(exc)
-        else:
-            payload["available"] = True
-            for line in completed.stdout.splitlines():
-                index, name, total, used, free = [part.strip() for part in line.split(",", maxsplit=4)]
-                payload["gpus"].append(
-                    {
-                        "index": int(index),
-                        "name": name,
-                        "memory_total_mib": int(total),
-                        "memory_used_mib": int(used),
-                        "memory_free_mib": int(free),
-                    }
-                )
         for model_name, model_settings in sorted(self.settings.engine.models.items()):
-            payload["models"].append(
-                {
-                    "id": model_name,
-                    "backend": model_settings.backend,
-                    "loaded": self._states[model_name].loaded,
-                    "vram_estimate_mib": model_settings.vram_estimate_mib,
-                }
-            )
+            payload["models"].append(self._gpu_model_payload(model_name, model_settings))
         return payload
 
     def _model_settings(self, model_name: str) -> ModelSettings:
@@ -204,13 +186,21 @@ class ImageRouterEngine:
         except KeyError as exc:
             raise UnknownModelError(f"unknown model: {model_name}") from exc
 
-    def _create_runtime(self, model_name: str, model_settings: ModelSettings) -> StubImageRuntime | DiffusersFlux2KleinRuntime | DiffusersFireRedGgufRuntime:
+    def _create_runtime(
+        self,
+        model_name: str,
+        model_settings: ModelSettings,
+    ) -> StubImageRuntime | DiffusersFlux2KleinRuntime | DiffusersFireRedGgufRuntime | DiffusersSdxlRuntime | DiffusersZImageRuntime:
         if model_settings.backend == "stub":
             return StubImageRuntime(model_name, model_settings)
         if model_settings.backend == "diffusers_flux2_klein":
             return DiffusersFlux2KleinRuntime(model_name, model_settings)
         if model_settings.backend == "diffusers_firered_gguf":
             return DiffusersFireRedGgufRuntime(model_name, model_settings)
+        if model_settings.backend == "diffusers_sdxl":
+            return DiffusersSdxlRuntime(model_name, model_settings)
+        if model_settings.backend == "diffusers_z_image":
+            return DiffusersZImageRuntime(model_name, model_settings)
         raise UnsupportedBackendError(f"unsupported backend: {model_settings.backend}")
 
     def _close_runtime(self, runtime: object | None) -> None:
@@ -238,6 +228,7 @@ class ImageRouterEngine:
             "inflight": 0,
             "queued": 0,
         }
+        vram_estimate_mib, vram_estimate_source = self._vram_estimate(model_name, model_settings)
         return {
             "id": model_name,
             "backend": model_settings.backend,
@@ -250,10 +241,41 @@ class ImageRouterEngine:
             "capabilities": self._capabilities_payload(model_settings),
             "model_path": model_settings.model_path,
             "base_model_path": model_settings.base_model_path,
-            "vram_estimate_mib": model_settings.vram_estimate_mib,
+            "vram_estimate_mib": vram_estimate_mib,
+            "vram_estimate_source": vram_estimate_source,
             "recommended_steps": model_settings.recommended_steps,
             "recommended_guidance": model_settings.recommended_guidance,
         }
+
+    def _gpu_model_payload(self, model_name: str, model_settings: ModelSettings) -> dict[str, Any]:
+        state = self._states[model_name]
+        scheduler_state = self._scheduler.snapshot(model_name) or {
+            "target_inflight": state.target_inflight,
+            "inflight": 0,
+            "queued": 0,
+        }
+        vram_estimate_mib, vram_estimate_source = self._vram_estimate(model_name, model_settings)
+        return {
+            "name": model_name,
+            "runtime_state": "loading" if state.loading else ("loaded" if state.loaded else "unloaded"),
+            "is_loaded": state.loaded,
+            "configured_target_inflight": scheduler_state["target_inflight"],
+            "effective_target_inflight": scheduler_state["target_inflight"],
+            "vram_estimate_mib": vram_estimate_mib,
+            "vram_estimate_source": vram_estimate_source,
+        }
+
+    def _vram_estimate(self, model_name: str, model_settings: ModelSettings) -> tuple[int | None, str]:
+        state = self._states[model_name]
+        if state.observed_vram_mib is not None:
+            return state.observed_vram_mib, "observed_load_delta"
+        if model_settings.vram_estimate_mib is not None:
+            return model_settings.vram_estimate_mib, "configured"
+        if state.artifact_size_mib is None:
+            state.artifact_size_mib = estimate_model_artifact_size_mib(model_settings.model_path)
+        if state.artifact_size_mib is not None:
+            return state.artifact_size_mib, "model_artifact_size"
+        return None, "unavailable"
 
     def _capabilities_payload(self, model_settings: ModelSettings) -> dict[str, Any]:
         return {
@@ -263,3 +285,12 @@ class ImageRouterEngine:
             "max_images": model_settings.max_images,
             "max_output_images": model_settings.max_output_images,
         }
+
+
+def _observed_vram_delta_mib(before_mib: int | None, after_mib: int | None) -> int | None:
+    if before_mib is None or after_mib is None or after_mib < before_mib:
+        return None
+    delta_mib = after_mib - before_mib
+    if delta_mib <= 0:
+        return None
+    return delta_mib
