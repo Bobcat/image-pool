@@ -218,6 +218,8 @@ class ImageRouterEngine:
             "capabilities": self._capabilities_payload(model_settings),
             "recommended_steps": model_settings.recommended_steps,
             "recommended_guidance": model_settings.recommended_guidance,
+            "generation_parameters": dict(model_settings.generation_parameters),
+            "edit_parameters": dict(model_settings.edit_parameters),
         }
 
     def _state_payload(self, model_name: str) -> dict[str, Any]:
@@ -245,6 +247,8 @@ class ImageRouterEngine:
             "vram_estimate_source": vram_estimate_source,
             "recommended_steps": model_settings.recommended_steps,
             "recommended_guidance": model_settings.recommended_guidance,
+            "generation_parameters": dict(model_settings.generation_parameters),
+            "edit_parameters": dict(model_settings.edit_parameters),
         }
 
     def _gpu_model_payload(self, model_name: str, model_settings: ModelSettings) -> dict[str, Any]:

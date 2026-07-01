@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app import training as training_module
+from app.engine.diffusers_sdxl import _metadata_sampler
 from app.engine.diffusers_flux import _lora_request_from_metadata
 from app.engine.diffusers_z_image import _lora_request_from_metadata as _z_image_lora_request_from_metadata
 from app.main import create_app
@@ -101,6 +102,22 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["path"], str(lora_path.resolve()))
         self.assertEqual(payload["scale"], 0.65)
 
+    def test_sdxl_sampler_metadata_allows_known_values_only(self):
+        self.assertEqual(_metadata_sampler({}, default="euler"), "euler")
+        self.assertEqual(_metadata_sampler({"sampler": "euler_a"}, default="euler"), "euler_a")
+        self.assertEqual(_metadata_sampler({"sampler": "dpmpp_2m"}, default="euler"), "dpmpp_2m")
+        self.assertEqual(_metadata_sampler({"sampler": "flowmatch_euler"}, default="euler"), "euler")
+
+    def test_public_models_report_generation_parameters(self):
+        with TestClient(create_app()) as client:
+            response = client.get("/v1/models")
+
+        self.assertEqual(response.status_code, 200)
+        model = next(item for item in response.json()["data"] if item["id"] == "stub-image")
+        self.assertEqual(model["generation_parameters"]["size"]["default"], "512x512")
+        self.assertEqual(model["generation_parameters"]["n"]["maximum"], 4)
+        self.assertEqual(model["edit_parameters"]["size"]["default"], "512x512")
+
     def test_training_status_reports_backend(self):
         with TestClient(create_app()) as client:
             response = client.get("/v1/training/flux-lora")
@@ -134,7 +151,13 @@ class ApiTests(unittest.TestCase):
                         "enabled": false,
                         "model_path": "/tmp/flux-test",
                         "recommended_steps": 50,
-                        "recommended_guidance": 4.0
+                        "recommended_guidance": 4.0,
+                        "generation_parameters": {
+                          "steps": {"kind": "integer", "target": "metadata", "default": 50}
+                        },
+                        "edit_parameters": {
+                          "strength": {"kind": "number", "target": "metadata", "default": 0.35}
+                        }
                       }
                     }
                   }
@@ -151,6 +174,8 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(model["id"], "flux-test")
         self.assertEqual(model["recommended_steps"], 50)
         self.assertEqual(model["recommended_guidance"], 4.0)
+        self.assertEqual(model["generation_parameters"]["steps"]["default"], 50)
+        self.assertEqual(model["edit_parameters"]["strength"]["default"], 0.35)
 
     def test_training_bucket_preserves_image_aspect_ratio(self):
         with tempfile.TemporaryDirectory() as tmpdir:

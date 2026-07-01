@@ -22,10 +22,10 @@ Current reality note:
   workbench
 - model definitions still come from merged `settings.json + local.json`
 - load/unload only changes in-process runtime state
-- `recommended_steps` and `recommended_guidance` are the only generation
-  defaults currently surfaced by model definitions
-- richer per-model parameter schemas are proposed below, but are not implemented
-  yet
+- `generation_parameters` and `edit_parameters` are surfaced by public and admin
+  model endpoints
+- `recommended_steps` and `recommended_guidance` still exist as compatibility
+  fields
 - Flux and Z-Image LoRA training endpoints exist and share one in-process
   training slot
 
@@ -50,7 +50,7 @@ Current reality note:
   - [`POST /v1/training/z-image-lora`](#post-v1trainingz-image-lora)
   - [`POST /v1/training/z-image-lora/stop`](#post-v1trainingz-image-lorastop)
 - [Image Request Parameters](#image-request-parameters)
-- [Proposed Parameter Schema](#proposed-parameter-schema)
+- [Parameter Schema](#parameter-schema)
 - [Unload And In-Flight Requests](#unload-and-in-flight-requests)
 - [Errors](#errors)
 
@@ -90,6 +90,8 @@ This is static process input. It includes fields such as:
 - `vram_estimate_mib`
 - `recommended_steps`
 - `recommended_guidance`
+- `generation_parameters`
+- `edit_parameters`
 
 This definition is not modified by the admin API in v1.
 
@@ -172,9 +174,62 @@ Example model definition:
   "max_output_images": 1,
   "vram_estimate_mib": 16000,
   "recommended_steps": 9,
-  "recommended_guidance": 0.0
+  "recommended_guidance": 0.0,
+  "generation_parameters": {
+    "size": {
+      "kind": "enum",
+      "target": "request",
+      "default": "1024x1024",
+      "allowed_values": ["768x768", "1024x1024", "1024x768", "768x1024"]
+    },
+    "steps": {
+      "kind": "integer",
+      "target": "metadata",
+      "default": 9,
+      "minimum": 1,
+      "maximum": 80,
+      "step": 1
+    },
+    "guidance": {
+      "kind": "number",
+      "target": "metadata",
+      "default": 0.0,
+      "minimum": 0.0,
+      "maximum": 20.0,
+      "step": 0.1
+    },
+    "seed": {
+      "kind": "integer_or_null",
+      "target": "request",
+      "default": null,
+      "minimum": 0,
+      "step": 1
+    },
+    "lora_scale": {
+      "kind": "number",
+      "target": "metadata",
+      "default": 1.75,
+      "minimum": 0.0,
+      "maximum": 2.0,
+      "step": 0.05
+    }
+  },
+  "edit_parameters": {
+    "strength": {
+      "kind": "number",
+      "target": "metadata",
+      "default": 0.35,
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "step": 0.05
+    }
+  }
 }
 ```
+
+The parameter objects above are shortened for readability. In the live config,
+`edit_parameters` usually repeats the shared generation fields and adds
+edit-only fields.
 
 Known backend ids:
 
@@ -213,11 +268,57 @@ Response shape:
         "max_output_images": 1
       },
       "recommended_steps": 9,
-      "recommended_guidance": 0.0
+      "recommended_guidance": 0.0,
+      "generation_parameters": {
+        "size": {
+          "kind": "enum",
+          "target": "request",
+          "default": "1024x1024",
+          "allowed_values": ["768x768", "1024x1024", "1024x768", "768x1024"]
+        },
+        "steps": {
+          "kind": "integer",
+          "target": "metadata",
+          "default": 9,
+          "minimum": 1,
+          "maximum": 80,
+          "step": 1
+        },
+        "guidance": {
+          "kind": "number",
+          "target": "metadata",
+          "default": 0.0,
+          "minimum": 0.0,
+          "maximum": 20.0,
+          "step": 0.1
+        },
+        "lora_scale": {
+          "kind": "number",
+          "target": "metadata",
+          "default": 1.75,
+          "minimum": 0.0,
+          "maximum": 2.0,
+          "step": 0.05
+        }
+      },
+      "edit_parameters": {
+        "strength": {
+          "kind": "number",
+          "target": "metadata",
+          "default": 0.35,
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "step": 0.05
+        }
+      }
     }
   ]
 }
 ```
+
+Schema objects in endpoint examples may be shortened. Clients should treat
+`generation_parameters` and `edit_parameters` as dictionaries keyed by parameter
+name.
 
 ### `GET /v1/admin/models`
 
@@ -255,7 +356,33 @@ Response shape:
       "vram_estimate_mib": 20600,
       "vram_estimate_source": "observed_load_delta",
       "recommended_steps": 9,
-      "recommended_guidance": 0.0
+      "recommended_guidance": 0.0,
+      "generation_parameters": {
+        "size": {
+          "kind": "enum",
+          "target": "request",
+          "default": "1024x1024",
+          "allowed_values": ["768x768", "1024x1024", "1024x768", "768x1024"]
+        },
+        "steps": {
+          "kind": "integer",
+          "target": "metadata",
+          "default": 9,
+          "minimum": 1,
+          "maximum": 80,
+          "step": 1
+        }
+      },
+      "edit_parameters": {
+        "strength": {
+          "kind": "number",
+          "target": "metadata",
+          "default": 0.35,
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "step": 0.05
+        }
+      }
     }
   ]
 }
@@ -407,6 +534,7 @@ Request shape:
   "metadata": {
     "steps": 30,
     "guidance": 5.0,
+    "sampler": "euler",
     "strength": 0.35
   }
 }
@@ -540,6 +668,7 @@ Current metadata keys used by backends:
 
 - `steps`: integer, 1 to 80
 - `guidance`: number, 0.0 to 20.0
+- `sampler`: SDXL only; one of `euler`, `euler_a`, or `dpmpp_2m`
 - `negative_prompt`: SDXL only
 - `strength`: image edit/img2img strength, 0.0 to 1.0
 - `lora_id`: optional UI/runtime identifier for metrics
@@ -548,14 +677,14 @@ Current metadata keys used by backends:
 
 Current backend defaults:
 
-| Backend | Steps | Guidance | Strength | Notes |
-| --- | ---: | ---: | ---: | --- |
-| `diffusers_flux2_klein` | 4 | 1.0 | n/a | Supports LoRA metadata |
-| `diffusers_sdxl` | `recommended_steps` or 30 | `recommended_guidance` or 5.0 | 0.35 | Supports `negative_prompt` |
-| `diffusers_z_image` | `recommended_steps` or 9 | `recommended_guidance` or 0.0 | 0.35 | Supports LoRA metadata |
-| `diffusers_firered_gguf` | 40 | 4.0 | n/a | Image edit backend |
+| Backend | Steps | Guidance | Strength | Sampler | Notes |
+| --- | ---: | ---: | ---: | --- | --- |
+| `diffusers_flux2_klein` | 4 | 1.0 | n/a | n/a | Supports LoRA metadata |
+| `diffusers_sdxl` | `recommended_steps` or 30 | `recommended_guidance` or 5.0 | 0.35 | `euler` | Supports `negative_prompt` |
+| `diffusers_z_image` | `recommended_steps` or 9 | `recommended_guidance` or 0.0 | 0.35 | n/a | Supports LoRA metadata |
+| `diffusers_firered_gguf` | 40 | 4.0 | n/a | n/a | Image edit backend |
 
-## Proposed Parameter Schema
+## Parameter Schema
 
 The workbench needs enough model-specific parameter metadata to build the image
 generation details section for the selected model and to implement `Reset
@@ -564,18 +693,42 @@ defaults` without hardcoding per-model rules in the UI.
 Capabilities should answer what the model can do. Parameter schemas should
 answer which controls the UI should show for that model.
 
-Proposed model definition extension:
+`generation_parameters` is used for text-to-image requests.
+
+`edit_parameters` is used for image-to-image/edit requests.
+
+`edit_parameters` is a full schema for edit mode. It is not a patch on top of
+`generation_parameters`. Models usually repeat shared fields such as `size`,
+`n`, `steps`, `guidance`, and `seed` there, then add edit-only fields such as
+`strength`.
+
+Each entry has a `target`:
+
+- `request`: the value is sent as a top-level image request field
+- `metadata`: the value is sent inside `metadata`
+
+Entries may include `label`. The workbench uses it as the visible control name.
+Use model-native names when possible, for example SDXL uses Comfy-like labels
+such as `cfg`, `sampler_name`, and `denoise`.
+
+Enum entries may also include `labels`. The keys are wire values. The values are
+option labels, for example `euler` -> `Euler (native)`.
+
+Implemented model definition shape, including an optional sampler enum:
 
 ```json
 {
   "generation_parameters": {
     "size": {
       "kind": "enum",
+      "target": "request",
       "default": "1024x1024",
-      "allowed_values": ["768x768", "1024x1024", "1024x1536", "1536x1024"]
+      "allowed_values": ["768x768", "1024x1024", "1024x768", "768x1024"]
     },
     "steps": {
       "kind": "integer",
+      "target": "metadata",
+      "label": "steps",
       "default": 9,
       "minimum": 1,
       "maximum": 80,
@@ -583,13 +736,28 @@ Proposed model definition extension:
     },
     "guidance": {
       "kind": "number",
+      "target": "metadata",
+      "label": "cfg",
       "default": 0.0,
       "minimum": 0.0,
       "maximum": 20.0,
       "step": 0.1
     },
+    "sampler": {
+      "kind": "enum",
+      "target": "metadata",
+      "label": "sampler_name",
+      "default": "euler",
+      "allowed_values": ["euler", "euler_a", "dpmpp_2m"],
+      "labels": {
+        "euler": "Euler (native)",
+        "euler_a": "Euler a",
+        "dpmpp_2m": "DPM++ 2M"
+      }
+    },
     "seed": {
       "kind": "integer_or_null",
+      "target": "request",
       "default": null,
       "minimum": 0,
       "step": 1
@@ -598,6 +766,8 @@ Proposed model definition extension:
   "edit_parameters": {
     "strength": {
       "kind": "number",
+      "target": "metadata",
+      "label": "denoise",
       "default": 0.35,
       "minimum": 0.0,
       "maximum": 1.0,
@@ -607,21 +777,22 @@ Proposed model definition extension:
 }
 ```
 
-Suggested API behavior once implemented:
+Current API behavior:
 
 - `GET /v1/models` includes parameter schemas for loaded models
 - `GET /v1/admin/models` includes the same parameter schemas plus runtime state
 - the workbench renders controls from these schemas
 - `Reset defaults` applies the selected model's schema defaults
-- existing `recommended_steps` and `recommended_guidance` can be removed after
-  the workbench no longer depends on them
+- `recommended_steps` and `recommended_guidance` are still returned for
+  compatibility
 
-Suggested UI mapping:
+Current UI mapping:
 
 - `integer` -> stepper or numeric input
-- `number` -> slider plus numeric input where precision matters
-- `enum` -> select, menu, or segmented control
-- `integer_or_null` -> numeric input with an unset/locked state
+- `number` -> numeric input, or slider for `strength` and `lora_scale`
+- `enum` -> select
+- `string` -> text input
+- `integer_or_null` -> numeric input with empty value as unset
 
 ## Unload And In-Flight Requests
 

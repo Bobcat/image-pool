@@ -16,6 +16,12 @@ from app.engine.common import GeneratedImagePayload, ImageJob, ImageResult, rele
 
 
 _SIZE_RE = re.compile(r"^(\d{2,4})x(\d{2,4})$")
+_DEFAULT_SAMPLER = "euler"
+_SDXL_SCHEDULER_CLASS_NAMES = {
+    "euler": "EulerDiscreteScheduler",
+    "euler_a": "EulerAncestralDiscreteScheduler",
+    "dpmpp_2m": "DPMSolverMultistepScheduler",
+}
 
 
 class DiffusersSdxlRuntime:
@@ -27,7 +33,13 @@ class DiffusersSdxlRuntime:
 
         started_at = time.perf_counter()
         import torch
-        from diffusers import AutoPipelineForImage2Image, StableDiffusionXLPipeline
+        from diffusers import (
+            AutoPipelineForImage2Image,
+            DPMSolverMultistepScheduler,
+            EulerAncestralDiscreteScheduler,
+            EulerDiscreteScheduler,
+            StableDiffusionXLPipeline,
+        )
 
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is required for diffusers_sdxl")
@@ -37,6 +49,12 @@ class DiffusersSdxlRuntime:
         self._torch = torch
         self._device = "cuda"
         self._dtype = torch.float16
+        self._scheduler_classes = {
+            "euler": EulerDiscreteScheduler,
+            "euler_a": EulerAncestralDiscreteScheduler,
+            "dpmpp_2m": DPMSolverMultistepScheduler,
+        }
+        self._active_sampler = ""
         pipe = None
         img2img_pipe = None
         try:
@@ -56,6 +74,7 @@ class DiffusersSdxlRuntime:
             del pipe
             release_torch_cuda_memory(torch)
             raise
+        self._scheduler_config = dict(pipe.scheduler.config)
         self._pipe = pipe
         self._img2img_pipe = img2img_pipe
         self._load_wall_ms = (time.perf_counter() - started_at) * 1000
@@ -93,6 +112,8 @@ class DiffusersSdxlRuntime:
             maximum=20.0,
         )
         negative_prompt = _metadata_str(job.metadata, "negative_prompt")
+        sampler = _metadata_sampler(job.metadata, default=_DEFAULT_SAMPLER)
+        self._apply_sampler(sampler)
         strength = _metadata_float(job.metadata, "strength", default=0.35, minimum=0.0, maximum=1.0)
         input_image = _decode_image(job).resize((width, height), Image.Resampling.LANCZOS) if job.operation == "edit" else None
 
@@ -140,11 +161,20 @@ class DiffusersSdxlRuntime:
                 "height": height,
                 "steps": steps,
                 "guidance": guidance,
+                "sampler": sampler,
                 "strength": strength if input_image is not None else 0.0,
                 "device": self._device,
                 "torch_dtype": "float16",
             },
         )
+
+    def _apply_sampler(self, sampler: str) -> None:
+        if sampler == self._active_sampler:
+            return
+        scheduler_class = self._scheduler_classes[sampler]
+        self._pipe.scheduler = scheduler_class.from_config(self._scheduler_config)
+        self._img2img_pipe.scheduler = scheduler_class.from_config(self._scheduler_config)
+        self._active_sampler = sampler
 
 
 def _parse_size(size: str) -> tuple[int, int]:
@@ -178,6 +208,11 @@ def _metadata_float(metadata: dict[str, Any], key: str, *, default: float, minim
 
 def _metadata_str(metadata: dict[str, Any], key: str) -> str:
     return str(metadata.get(key) or "").strip()
+
+
+def _metadata_sampler(metadata: dict[str, Any], *, default: str) -> str:
+    value = str(metadata.get("sampler") or default).strip()
+    return value if value in _SDXL_SCHEDULER_CLASS_NAMES else default
 
 
 def _decode_image(job: ImageJob) -> Image.Image:

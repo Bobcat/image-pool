@@ -16,7 +16,17 @@
         "tasks": ["image_generation", "image_edit"],
         "max_images": 4,
         "max_output_images": 4,
-        "vram_estimate_mib": 0
+        "vram_estimate_mib": 0,
+        "generation_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "512x512", "allowed_values": ["64x64", "512x512"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 4, "step": 1},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1}
+        },
+        "edit_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "512x512", "allowed_values": ["64x64", "512x512"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 4, "step": 1},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1}
+        }
       },
       "flux2-klein-4b": {
         "backend": "diffusers_flux2_klein",
@@ -30,7 +40,24 @@
         "max_output_images": 1,
         "vram_estimate_mib": 16300,
         "recommended_steps": 4,
-        "recommended_guidance": 1.0
+        "recommended_guidance": 1.0,
+        "generation_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "512x512", "allowed_values": ["512x512", "768x576", "576x768", "1024x1024", "1024x576", "576x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 4, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 1.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        },
+        "edit_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "512x512", "allowed_values": ["512x512", "768x576", "576x768", "1024x1024", "1024x576", "576x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 4, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 1.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "strength": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 1.0, "step": 0.05},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        }
       },
       "flux2-klein-base-4b": {
         "backend": "diffusers_flux2_klein",
@@ -44,7 +71,24 @@
         "max_output_images": 1,
         "vram_estimate_mib": 16300,
         "recommended_steps": 50,
-        "recommended_guidance": 4.0
+        "recommended_guidance": 4.0,
+        "generation_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "1024x1024", "allowed_values": ["512x512", "768x576", "576x768", "1024x1024", "1024x576", "576x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 50, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 4.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        },
+        "edit_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "1024x1024", "allowed_values": ["512x512", "768x576", "576x768", "1024x1024", "1024x576", "576x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 50, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 4.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "strength": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 1.0, "step": 0.05},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        }
       },
       "flux2-klein-base-9b": {
         "backend": "diffusers_flux2_klein",
@@ -58,7 +102,24 @@
         "max_output_images": 1,
         "vram_estimate_mib": 50000,
         "recommended_steps": 50,
-        "recommended_guidance": 4.0
+        "recommended_guidance": 4.0,
+        "generation_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "1024x1024", "allowed_values": ["512x512", "768x576", "576x768", "1024x1024", "1024x576", "576x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 50, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 4.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        },
+        "edit_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "1024x1024", "allowed_values": ["512x512", "768x576", "576x768", "1024x1024", "1024x576", "576x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 50, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 4.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "strength": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 1.0, "step": 0.05},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        }
       },
       "flux2-klein-base-9b-fp8": {
         "backend": "diffusers_flux2_klein",
@@ -73,7 +134,24 @@
         "max_output_images": 1,
         "vram_estimate_mib": 25200,
         "recommended_steps": 50,
-        "recommended_guidance": 4.0
+        "recommended_guidance": 4.0,
+        "generation_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "1024x1024", "allowed_values": ["512x512", "768x576", "576x768", "1024x1024", "1024x576", "576x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 50, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 4.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        },
+        "edit_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "1024x1024", "allowed_values": ["512x512", "768x576", "576x768", "1024x1024", "1024x576", "576x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 50, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 4.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "strength": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 1.0, "step": 0.05},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        }
       },
       "flux2-klein-9b": {
         "backend": "diffusers_flux2_klein",
@@ -87,7 +165,24 @@
         "max_output_images": 1,
         "vram_estimate_mib": 34000,
         "recommended_steps": 4,
-        "recommended_guidance": 1.0
+        "recommended_guidance": 1.0,
+        "generation_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "512x512", "allowed_values": ["512x512", "768x576", "576x768", "1024x1024", "1024x576", "576x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 4, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 1.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        },
+        "edit_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "512x512", "allowed_values": ["512x512", "768x576", "576x768", "1024x1024", "1024x576", "576x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 4, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 1.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "strength": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 1.0, "step": 0.05},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        }
       },
       "flux2-klein-9b-fp8": {
         "backend": "diffusers_flux2_klein",
@@ -102,7 +197,24 @@
         "max_output_images": 1,
         "vram_estimate_mib": 25000,
         "recommended_steps": 4,
-        "recommended_guidance": 1.0
+        "recommended_guidance": 1.0,
+        "generation_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "512x512", "allowed_values": ["512x512", "768x576", "576x768", "1024x1024", "1024x576", "576x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 4, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 1.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        },
+        "edit_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "512x512", "allowed_values": ["512x512", "768x576", "576x768", "1024x1024", "1024x576", "576x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 4, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 1.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "strength": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 1.0, "step": 0.05},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        }
       },
       "sdxl-base-1.0": {
         "backend": "diffusers_sdxl",
@@ -116,7 +228,26 @@
         "max_output_images": 1,
         "vram_estimate_mib": 7000,
         "recommended_steps": 30,
-        "recommended_guidance": 5.0
+        "recommended_guidance": 5.0,
+        "generation_parameters": {
+          "size": {"kind": "enum", "target": "request", "label": "size", "default": "1024x1024", "allowed_values": ["768x768", "1024x1024", "1024x768", "768x1024"]},
+          "n": {"kind": "integer", "target": "request", "label": "batch_size", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "label": "steps", "default": 30, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "label": "cfg", "default": 5.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "sampler": {"kind": "enum", "target": "metadata", "label": "sampler_name", "default": "euler", "allowed_values": ["euler", "euler_a", "dpmpp_2m"], "labels": {"euler": "Euler (native)", "euler_a": "Euler a", "dpmpp_2m": "DPM++ 2M"}},
+          "negative_prompt": {"kind": "string", "target": "metadata", "label": "negative", "default": ""},
+          "seed": {"kind": "integer_or_null", "target": "request", "label": "seed", "default": null, "minimum": 0, "step": 1}
+        },
+        "edit_parameters": {
+          "size": {"kind": "enum", "target": "request", "label": "size", "default": "1024x1024", "allowed_values": ["768x768", "1024x1024", "1024x768", "768x1024"]},
+          "n": {"kind": "integer", "target": "request", "label": "batch_size", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "label": "steps", "default": 30, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "label": "cfg", "default": 5.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "sampler": {"kind": "enum", "target": "metadata", "label": "sampler_name", "default": "euler", "allowed_values": ["euler", "euler_a", "dpmpp_2m"], "labels": {"euler": "Euler (native)", "euler_a": "Euler a", "dpmpp_2m": "DPM++ 2M"}},
+          "strength": {"kind": "number", "target": "metadata", "label": "denoise", "default": 0.35, "minimum": 0.0, "maximum": 1.0, "step": 0.05},
+          "negative_prompt": {"kind": "string", "target": "metadata", "label": "negative", "default": ""},
+          "seed": {"kind": "integer_or_null", "target": "request", "label": "seed", "default": null, "minimum": 0, "step": 1}
+        }
       },
       "z-image-turbo": {
         "backend": "diffusers_z_image",
@@ -130,7 +261,24 @@
         "max_output_images": 1,
         "vram_estimate_mib": 16000,
         "recommended_steps": 9,
-        "recommended_guidance": 0.0
+        "recommended_guidance": 0.0,
+        "generation_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "1024x1024", "allowed_values": ["768x768", "1024x1024", "1024x768", "768x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 9, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 0.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 1.75, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        },
+        "edit_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "1024x1024", "allowed_values": ["768x768", "1024x1024", "1024x768", "768x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 9, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 0.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "strength": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 1.0, "step": 0.05},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 1.75, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        }
       },
       "z-image-base": {
         "backend": "diffusers_z_image",
@@ -144,7 +292,24 @@
         "max_output_images": 1,
         "vram_estimate_mib": 21000,
         "recommended_steps": 50,
-        "recommended_guidance": 5.0
+        "recommended_guidance": 5.0,
+        "generation_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "1024x1024", "allowed_values": ["768x768", "1024x1024", "1024x768", "768x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 50, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 5.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 1.0, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        },
+        "edit_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "1024x1024", "allowed_values": ["768x768", "1024x1024", "1024x768", "768x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 50, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 5.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "strength": {"kind": "number", "target": "metadata", "default": 0.35, "minimum": 0.0, "maximum": 1.0, "step": 0.05},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "default": 1.0, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
+        }
       },
       "firered-image-edit-1.1-q4-k-m": {
         "backend": "diffusers_firered_gguf",
@@ -157,7 +322,14 @@
         "tasks": ["image_edit"],
         "max_images": 1,
         "max_output_images": 1,
-        "vram_estimate_mib": 36000
+        "vram_estimate_mib": 36000,
+        "edit_parameters": {
+          "size": {"kind": "enum", "target": "request", "default": "1024x1024", "allowed_values": ["768x768", "1024x1024", "1024x768", "768x1024"]},
+          "n": {"kind": "integer", "target": "request", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
+          "steps": {"kind": "integer", "target": "metadata", "default": 40, "minimum": 1, "maximum": 80, "step": 1},
+          "guidance": {"kind": "number", "target": "metadata", "default": 4.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
+          "seed": {"kind": "integer_or_null", "target": "request", "default": null, "minimum": 0, "step": 1}
+        }
       }
     }
   }

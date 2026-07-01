@@ -60,6 +60,18 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(model.modalities, ("text", "image"))
         self.assertEqual(model.recommended_steps, 30)
         self.assertEqual(model.recommended_guidance, 5.0)
+        self.assertEqual(model.generation_parameters["steps"]["label"], "steps")
+        self.assertEqual(model.generation_parameters["steps"]["default"], 30)
+        self.assertEqual(model.generation_parameters["guidance"]["label"], "cfg")
+        self.assertEqual(model.generation_parameters["guidance"]["default"], 5.0)
+        self.assertEqual(model.generation_parameters["sampler"]["label"], "sampler_name")
+        self.assertEqual(model.generation_parameters["sampler"]["default"], "euler")
+        self.assertEqual(model.generation_parameters["sampler"]["labels"]["euler"], "Euler (native)")
+        self.assertEqual(model.generation_parameters["sampler"]["allowed_values"], ["euler", "euler_a", "dpmpp_2m"])
+        self.assertEqual(model.generation_parameters["negative_prompt"]["default"], "")
+        self.assertEqual(model.edit_parameters["strength"]["label"], "denoise")
+        self.assertEqual(model.edit_parameters["strength"]["default"], 0.35)
+        self.assertEqual(model.edit_parameters["sampler"]["default"], "euler")
 
     def test_default_settings_have_z_image_turbo_model_disabled(self):
         settings = load_settings()
@@ -75,6 +87,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(model.modalities, ("text", "image"))
         self.assertEqual(model.recommended_steps, 9)
         self.assertEqual(model.recommended_guidance, 0.0)
+        self.assertEqual(model.generation_parameters["steps"]["default"], 9)
+        self.assertEqual(model.generation_parameters["guidance"]["default"], 0.0)
+        self.assertEqual(model.generation_parameters["lora_scale"]["default"], 1.75)
+        self.assertEqual(model.edit_parameters["strength"]["default"], 0.35)
 
     def test_default_settings_have_z_image_base_model_disabled(self):
         settings = load_settings()
@@ -90,6 +106,9 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(model.modalities, ("text", "image"))
         self.assertEqual(model.recommended_steps, 50)
         self.assertEqual(model.recommended_guidance, 5.0)
+        self.assertEqual(model.generation_parameters["steps"]["default"], 50)
+        self.assertEqual(model.generation_parameters["guidance"]["default"], 5.0)
+        self.assertEqual(model.generation_parameters["lora_scale"]["default"], 1.0)
 
 
 if __name__ == "__main__":

@@ -36,6 +36,8 @@ class ModelSettings(BaseModel):
     vram_estimate_mib: int | None = Field(default=None, ge=0)
     recommended_steps: int | None = Field(default=None, ge=1)
     recommended_guidance: float | None = Field(default=None, ge=0)
+    generation_parameters: dict[str, Any] = Field(default_factory=dict)
+    edit_parameters: dict[str, Any] = Field(default_factory=dict)
 
 
 class EngineSettings(BaseModel):
