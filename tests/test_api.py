@@ -1,4 +1,5 @@
 import base64
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,11 +8,35 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from app import loras as loras_module
 from app import training as training_module
+from app.engine.diffusers_sdxl import _lora_request_from_metadata as _sdxl_lora_request_from_metadata
 from app.engine.diffusers_sdxl import _metadata_sampler
 from app.engine.diffusers_flux import _lora_request_from_metadata
 from app.engine.diffusers_z_image import _lora_request_from_metadata as _z_image_lora_request_from_metadata
 from app.main import create_app
+
+
+def _write_test_lora(path: Path, *, metadata: dict[str, str] | None = None) -> None:
+    import torch
+    from safetensors.torch import save_file
+
+    save_file(
+        {"transformer.single_transformer_blocks.0.attn.to_out.lora_A.weight": torch.zeros((1, 1))},
+        str(path),
+        metadata=metadata or {"ss_trigger_words": "TEST_TOKEN"},
+    )
+
+
+def _write_sdxl_test_lora(path: Path, *, metadata: dict[str, str] | None = None) -> None:
+    import torch
+    from safetensors.torch import save_file
+
+    save_file(
+        {"lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q.lora_A.weight": torch.zeros((1, 1))},
+        str(path),
+        metadata=metadata or {"ss_trigger_words": "SDXL_TOKEN"},
+    )
 
 
 class ApiTests(unittest.TestCase):
@@ -102,10 +127,28 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["path"], str(lora_path.resolve()))
         self.assertEqual(payload["scale"], 0.65)
 
+    def test_sdxl_lora_metadata_resolves_request(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lora_path = Path(tmpdir) / "adapter.safetensors"
+            lora_path.write_bytes(b"lora")
+
+            payload = _sdxl_lora_request_from_metadata(
+                {
+                    "lora_id": "sdxl-lora",
+                    "lora_path": str(lora_path),
+                    "lora_scale": 1.1,
+                }
+            )
+
+        self.assertEqual(payload["id"], "sdxl-lora")
+        self.assertEqual(payload["path"], str(lora_path.resolve()))
+        self.assertEqual(payload["scale"], 1.1)
+
     def test_sdxl_sampler_metadata_allows_known_values_only(self):
         self.assertEqual(_metadata_sampler({}, default="euler"), "euler")
         self.assertEqual(_metadata_sampler({"sampler": "euler_a"}, default="euler"), "euler_a")
         self.assertEqual(_metadata_sampler({"sampler": "dpmpp_2m"}, default="euler"), "dpmpp_2m")
+        self.assertEqual(_metadata_sampler({"sampler": "lcm"}, default="euler"), "lcm")
         self.assertEqual(_metadata_sampler({"sampler": "flowmatch_euler"}, default="euler"), "euler")
 
     def test_public_models_report_generation_parameters(self):
@@ -176,6 +219,146 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(model["recommended_guidance"], 4.0)
         self.assertEqual(model["generation_parameters"]["steps"]["default"], 50)
         self.assertEqual(model["edit_parameters"]["strength"]["default"], 0.35)
+
+    def test_lora_inspect_reports_family_and_model_suggestions(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_path = Path(tmpdir) / "external.safetensors"
+            _write_test_lora(source_path)
+            settings_path = Path(tmpdir) / "settings.json"
+            settings_path.write_text(
+                json.dumps(
+                    {
+                        "engine": {
+                            "models": {
+                                "flux-test": {
+                                    "backend": "diffusers_flux2_klein",
+                                    "enabled": False,
+                                    "model_path": "/tmp/flux-test",
+                                    "generation_parameters": {
+                                        "lora_scale": {"kind": "number", "target": "metadata", "default": 0.35}
+                                    },
+                                },
+                                "sdxl-test": {
+                                    "backend": "diffusers_sdxl",
+                                    "enabled": False,
+                                    "model_path": "/tmp/sdxl-test",
+                                },
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with TestClient(create_app(settings_path)) as client:
+                response = client.post("/v1/admin/loras/inspect", json={"source_path": str(source_path)})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["family_guess"], "flux2-klein")
+        self.assertEqual(payload["trigger_words"], ["TEST_TOKEN"])
+        self.assertEqual(payload["compatible_model_suggestions"], ["flux-test"])
+        self.assertEqual(payload["default_strength_suggestion"], 0.35)
+        self.assertEqual(payload["detected_modules"], ["transformer"])
+        self.assertEqual(payload["key_count"], 1)
+
+    def test_lora_inspect_reports_sdxl_model_suggestions(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_path = Path(tmpdir) / "sdxl.safetensors"
+            _write_sdxl_test_lora(source_path)
+            settings_path = Path(tmpdir) / "settings.json"
+            settings_path.write_text(
+                json.dumps(
+                    {
+                        "engine": {
+                            "models": {
+                                "sdxl-test": {
+                                    "backend": "diffusers_sdxl",
+                                    "enabled": False,
+                                    "model_path": "/tmp/sdxl-test",
+                                    "generation_parameters": {
+                                        "lora_scale": {"kind": "number", "target": "metadata", "default": 1.0}
+                                    },
+                                }
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with TestClient(create_app(settings_path)) as client:
+                response = client.post("/v1/admin/loras/inspect", json={"source_path": str(source_path)})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["family_guess"], "sdxl")
+        self.assertEqual(payload["trigger_words"], ["SDXL_TOKEN"])
+        self.assertEqual(payload["compatible_model_suggestions"], ["sdxl-test"])
+        self.assertEqual(payload["default_strength_suggestion"], 1.0)
+        self.assertEqual(payload["detected_modules"], ["transformer", "unet"])
+
+    def test_lora_import_copies_weights_and_lists_record(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source_path = root / "external.safetensors"
+            _write_test_lora(source_path)
+            settings_path = root / "settings.json"
+            settings_path.write_text(
+                json.dumps(
+                    {
+                        "engine": {
+                            "models": {
+                                "flux-test": {
+                                    "backend": "diffusers_flux2_klein",
+                                    "enabled": False,
+                                    "model_path": "/tmp/flux-test",
+                                    "generation_parameters": {
+                                        "lora_scale": {"kind": "number", "target": "metadata", "default": 0.35}
+                                    },
+                                }
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            imported_root = root / "imported"
+
+            with patch.object(loras_module, "IMPORTED_LORAS_ROOT", imported_root):
+                with TestClient(create_app(settings_path)) as client:
+                    import_response = client.post(
+                        "/v1/admin/loras/import",
+                        json={
+                            "source_path": str(source_path),
+                            "name": "External Test",
+                            "family": "flux2-klein",
+                            "compatible_models": ["flux-test"],
+                            "trained_on_model_id": "flux-test",
+                            "trigger_words": ["TEST_TOKEN"],
+                            "default_strength": 0.5,
+                            "description": "Imported test LoRA.",
+                            "source_url": "https://example.test/lora",
+                        },
+                    )
+                    list_response = client.get("/v1/admin/loras")
+                    imported_file_exists = (imported_root / "external-test" / "adapter.safetensors").is_file()
+                    metadata = json.loads(
+                        (imported_root / "external-test" / "metadata.json").read_text(encoding="utf-8")
+                    )
+
+        self.assertEqual(import_response.status_code, 200)
+        imported = import_response.json()["lora"]
+        self.assertEqual(imported["id"], "imported/external-test")
+        self.assertEqual(imported["name"], "External Test")
+        self.assertEqual(imported["family"], "flux2-klein")
+        self.assertEqual(imported["compatible_models"], ["flux-test"])
+        self.assertEqual(imported["trigger_words"], ["TEST_TOKEN"])
+        self.assertEqual(imported["default_strength"], 0.5)
+        self.assertTrue(imported_file_exists)
+        self.assertEqual(metadata["description"], "Imported test LoRA.")
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.json()["data"][0]["id"], "imported/external-test")
 
     def test_training_bucket_preserves_image_aspect_ratio(self):
         with tempfile.TemporaryDirectory() as tmpdir:

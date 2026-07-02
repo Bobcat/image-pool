@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from app.config import load_settings
 from app.engine.common import ModelNotLoadedError, UnknownModelError, UnsupportedBackendError
 from app.engine.router import ImageRouterEngine
+from app.loras import LoraImportRequest, LoraInspectRequest, import_lora, inspect_lora, list_loras
 from app.schemas import FluxLoraTrainingStartRequest, ImageEditRequest, ImageGenerationRequest, ZImageLoraTrainingStartRequest
 from app.training import start_flux_lora_training, start_z_image_lora_training, stop_training, training_status
 
@@ -60,6 +61,18 @@ def create_app(settings_path: str | Path | None = None) -> FastAPI:
     @app.get("/v1/admin/gpu-memory")
     async def gpu_memory() -> dict:
         return engine.gpu_memory_payload()
+
+    @app.get("/v1/admin/loras")
+    async def admin_loras() -> dict:
+        return list_loras()
+
+    @app.post("/v1/admin/loras/inspect")
+    async def admin_lora_inspect(request: LoraInspectRequest) -> dict:
+        return inspect_lora(engine.settings, request)
+
+    @app.post("/v1/admin/loras/import")
+    async def admin_lora_import(request: LoraImportRequest) -> dict:
+        return import_lora(engine.settings, request)
 
     @app.post("/v1/admin/models/{model_name:path}/load")
     async def load_model(model_name: str) -> dict:

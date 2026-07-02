@@ -234,9 +234,10 @@
           "n": {"kind": "integer", "target": "request", "label": "batch_size", "default": 1, "minimum": 1, "maximum": 1, "step": 1},
           "steps": {"kind": "integer", "target": "metadata", "label": "steps", "default": 30, "minimum": 1, "maximum": 80, "step": 1},
           "guidance": {"kind": "number", "target": "metadata", "label": "cfg", "default": 5.0, "minimum": 0.0, "maximum": 20.0, "step": 0.1},
-          "sampler": {"kind": "enum", "target": "metadata", "label": "sampler_name", "default": "euler", "allowed_values": ["euler", "euler_a", "dpmpp_2m"], "labels": {"euler": "Euler (native)", "euler_a": "Euler a", "dpmpp_2m": "DPM++ 2M"}},
+          "sampler": {"kind": "enum", "target": "metadata", "label": "sampler_name", "default": "euler", "allowed_values": ["euler", "euler_a", "dpmpp_2m", "lcm"], "labels": {"euler": "Euler (native)", "euler_a": "Euler a", "dpmpp_2m": "DPM++ 2M", "lcm": "LCM"}},
           "negative_prompt": {"kind": "string", "target": "metadata", "label": "negative", "default": ""},
-          "seed": {"kind": "integer_or_null", "target": "request", "label": "seed", "default": null, "minimum": 0, "step": 1}
+          "seed": {"kind": "integer_or_null", "target": "request", "label": "seed", "default": null, "minimum": 0, "step": 1},
+          "lora_scale": {"kind": "number", "target": "metadata", "label": "lora_strength", "default": 1.0, "minimum": 0.0, "maximum": 2.0, "step": 0.05}
         },
         "edit_parameters": {
           "size": {"kind": "enum", "target": "request", "label": "size", "default": "1024x1024", "allowed_values": ["768x768", "1024x1024", "1024x768", "768x1024"]},

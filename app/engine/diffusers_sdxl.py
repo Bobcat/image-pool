@@ -17,10 +17,12 @@ from app.engine.common import GeneratedImagePayload, ImageJob, ImageResult, rele
 
 _SIZE_RE = re.compile(r"^(\d{2,4})x(\d{2,4})$")
 _DEFAULT_SAMPLER = "euler"
+_WORKBENCH_LORA_ADAPTER = "workbench_lora"
 _SDXL_SCHEDULER_CLASS_NAMES = {
     "euler": "EulerDiscreteScheduler",
     "euler_a": "EulerAncestralDiscreteScheduler",
     "dpmpp_2m": "DPMSolverMultistepScheduler",
+    "lcm": "LCMScheduler",
 }
 
 
@@ -38,6 +40,7 @@ class DiffusersSdxlRuntime:
             DPMSolverMultistepScheduler,
             EulerAncestralDiscreteScheduler,
             EulerDiscreteScheduler,
+            LCMScheduler,
             StableDiffusionXLPipeline,
         )
 
@@ -53,8 +56,10 @@ class DiffusersSdxlRuntime:
             "euler": EulerDiscreteScheduler,
             "euler_a": EulerAncestralDiscreteScheduler,
             "dpmpp_2m": DPMSolverMultistepScheduler,
+            "lcm": LCMScheduler,
         }
         self._active_sampler = ""
+        self._active_lora_path = ""
         pipe = None
         img2img_pipe = None
         try:
@@ -114,6 +119,7 @@ class DiffusersSdxlRuntime:
         negative_prompt = _metadata_str(job.metadata, "negative_prompt")
         sampler = _metadata_sampler(job.metadata, default=_DEFAULT_SAMPLER)
         self._apply_sampler(sampler)
+        lora_metrics = self._apply_lora(job.metadata)
         strength = _metadata_float(job.metadata, "strength", default=0.35, minimum=0.0, maximum=1.0)
         input_image = _decode_image(job).resize((width, height), Image.Resampling.LANCZOS) if job.operation == "edit" else None
 
@@ -163,6 +169,7 @@ class DiffusersSdxlRuntime:
                 "guidance": guidance,
                 "sampler": sampler,
                 "strength": strength if input_image is not None else 0.0,
+                **lora_metrics,
                 "device": self._device,
                 "torch_dtype": "float16",
             },
@@ -175,6 +182,32 @@ class DiffusersSdxlRuntime:
         self._pipe.scheduler = scheduler_class.from_config(self._scheduler_config)
         self._img2img_pipe.scheduler = scheduler_class.from_config(self._scheduler_config)
         self._active_sampler = sampler
+
+    def _apply_lora(self, metadata: dict[str, Any]) -> dict[str, Any]:
+        lora_request = _lora_request_from_metadata(metadata)
+        if lora_request is None:
+            if self._active_lora_path:
+                self._pipe.set_adapters(_WORKBENCH_LORA_ADAPTER, adapter_weights=0.0)
+            return {"lora_id": "", "lora_path": "", "lora_scale": 0.0}
+
+        lora_path = lora_request["path"]
+        if self._active_lora_path != lora_path:
+            if self._active_lora_path:
+                self._pipe.delete_adapters(_WORKBENCH_LORA_ADAPTER)
+            path = Path(lora_path)
+            self._pipe.load_lora_weights(
+                str(path.parent),
+                weight_name=path.name,
+                adapter_name=_WORKBENCH_LORA_ADAPTER,
+                local_files_only=True,
+            )
+            self._active_lora_path = lora_path
+        self._pipe.set_adapters(_WORKBENCH_LORA_ADAPTER, adapter_weights=lora_request["scale"])
+        return {
+            "lora_id": lora_request["id"],
+            "lora_path": lora_path,
+            "lora_scale": lora_request["scale"],
+        }
 
 
 def _parse_size(size: str) -> tuple[int, int]:
@@ -208,6 +241,25 @@ def _metadata_float(metadata: dict[str, Any], key: str, *, default: float, minim
 
 def _metadata_str(metadata: dict[str, Any], key: str) -> str:
     return str(metadata.get(key) or "").strip()
+
+
+def _lora_request_from_metadata(metadata: dict[str, Any]) -> dict[str, Any] | None:
+    lora_path_value = _metadata_str(metadata, "lora_path")
+    lora_scale = _metadata_float(metadata, "lora_scale", default=1.0, minimum=0.0, maximum=2.0)
+    if not lora_path_value or lora_scale <= 0:
+        return None
+
+    lora_path = Path(lora_path_value).expanduser()
+    if not lora_path.is_file():
+        raise ValueError(f"LoRA file does not exist: {lora_path}")
+    if lora_path.suffix.lower() != ".safetensors":
+        raise ValueError("LoRA file must be a .safetensors file")
+
+    return {
+        "id": _metadata_str(metadata, "lora_id"),
+        "path": str(lora_path.resolve()),
+        "scale": lora_scale,
+    }
 
 
 def _metadata_sampler(metadata: dict[str, Any], *, default: str) -> str:
